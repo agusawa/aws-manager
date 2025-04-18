@@ -1,69 +1,47 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { Badge } from "@/components/ui/badge"
 import { Power, PowerOff, RefreshCw, Server, Clock, AlertCircle } from "lucide-react"
-import { fetchInstanceStatus, startInstance, stopInstance } from "@/lib/api"
-
-type InstanceStatus = "running" | "stopped" | "pending" | "stopping" | "unknown"
-
-interface InstanceDetails {
-  status: InstanceStatus
-  instanceId: string
-  instanceType: string
-  publicIp?: string
-  launchTime?: string
-}
+import { useRetrieveEc2InstanceQuery, useStartEc2InstanceMutation, useStopEc2InstanceMutation } from "@/state/queries/ec2-instances"
+import { InstanceStatus } from "@/types/ec2-instances.types"
+import { Skeleton } from "@/components/ui/skeleton"
+import { day } from "@/lib/day"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 
 export function InstanceManager() {
-  const [instance, setInstance] = useState<InstanceDetails | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [actionInProgress, setActionInProgress] = useState(false)
   const { toast } = useToast()
+  const [showStartDialog, setShowStartDialog] = useState(false)
+  const [showStopDialog, setShowStopDialog] = useState(false)
 
-  const fetchStatus = async () => {
-    try {
-      setLoading(true)
-      const data = await fetchInstanceStatus()
-      setInstance(data)
-    } catch (error) {
-      console.error("Failed to fetch instance status:", error)
-      toast({
-        title: "Error",
-        description: "Failed to fetch instance status. Please try again.",
-        variant: "destructive",
-      })
-    } finally {
-      setLoading(false)
-    }
-  }
+  const { mutateAsync: startInstance, isPending: isStarting } = useStartEc2InstanceMutation()
+  const { mutateAsync: stopInstance, isPending: isStopping } = useStopEc2InstanceMutation()
 
-  useEffect(() => {
-    fetchStatus()
-
-    // Set up polling every 15 seconds
-    const intervalId = setInterval(fetchStatus, 15000)
-
-    return () => clearInterval(intervalId)
-  }, [])
+  const { data, isLoading, isFetching, refetch } = useRetrieveEc2InstanceQuery(process.env.NEXT_PUBLIC_AWS_EC2_INSTANCE_ID!)
+  const instance = data?.data
 
   const handleStartInstance = async () => {
     if (!instance) return
 
-    setActionInProgress(true)
     try {
-      await startInstance()
+      await startInstance(instance.instanceId)
       toast({
-        title: "Starting Instance",
+        title: "Instance started",
         description: "Your instance is starting. This may take a moment.",
       })
-      // Update the UI immediately to show pending state
-      setInstance({ ...instance, status: "pending" })
-      // Fetch the actual status after a short delay
-      setTimeout(fetchStatus, 2000)
     } catch (error) {
       console.error("Failed to start instance:", error)
       toast({
@@ -72,24 +50,19 @@ export function InstanceManager() {
         variant: "destructive",
       })
     } finally {
-      setActionInProgress(false)
+      setShowStartDialog(false)
     }
   }
 
   const handleStopInstance = async () => {
     if (!instance) return
 
-    setActionInProgress(true)
     try {
-      await stopInstance()
+      await stopInstance(instance.instanceId)
       toast({
-        title: "Stopping Instance",
+        title: "Instance stopped",
         description: "Your instance is stopping. This may take a moment.",
       })
-      // Update the UI immediately to show stopping state
-      setInstance({ ...instance, status: "stopping" })
-      // Fetch the actual status after a short delay
-      setTimeout(fetchStatus, 2000)
     } catch (error) {
       console.error("Failed to stop instance:", error)
       toast({
@@ -98,12 +71,12 @@ export function InstanceManager() {
         variant: "destructive",
       })
     } finally {
-      setActionInProgress(false)
+      setShowStopDialog(false)
     }
   }
 
   const handleRefresh = () => {
-    fetchStatus()
+    refetch()
   }
 
   const getStatusBadge = (status: InstanceStatus) => {
@@ -138,43 +111,74 @@ export function InstanceManager() {
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return "Unknown"
-    const date = new Date(dateString)
-    return date.toLocaleString()
+    return day(dateString).format('lll')
   }
 
-  if (loading && !instance) {
+  if (isLoading) {
     return (
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle className="flex items-center justify-center">
-            <RefreshCw className="h-5 w-5 mr-2 animate-spin" />
-            Loading Instance
-          </CardTitle>
+          <div className="flex justify-between items-center">
+            <Skeleton className="h-6 w-32" />
+            <Skeleton className="h-8 w-8" />
+          </div>
+          <Skeleton className="h-4 w-48 mt-2" />
         </CardHeader>
-        <CardContent className="flex justify-center py-8">
-          <p className="text-muted-foreground">Fetching instance information...</p>
+
+        <CardContent className="space-y-6">
+          <div className="flex justify-center">
+            <Skeleton className="h-24 w-24 rounded-full" />
+          </div>
+
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <Skeleton className="h-4 w-16" />
+              <Skeleton className="h-6 w-20" />
+            </div>
+
+            <div className="flex justify-between items-center">
+              <Skeleton className="h-4 w-16" />
+              <Skeleton className="h-4 w-24" />
+            </div>
+
+            <div className="flex justify-between items-center">
+              <Skeleton className="h-4 w-16" />
+              <Skeleton className="h-4 w-32" />
+            </div>
+
+            <div className="flex justify-between items-center">
+              <Skeleton className="h-4 w-16" />
+              <Skeleton className="h-4 w-40" />
+            </div>
+          </div>
         </CardContent>
+
+        <CardFooter className="flex gap-2 justify-center border-t pt-6">
+          <Skeleton className="h-10 w-32" />
+        </CardFooter>
       </Card>
     )
   }
+
+  if (!instance) return null
 
   return (
     <Card className="w-full max-w-md">
       <CardHeader>
         <div className="flex justify-between items-center">
-          <CardTitle>EC2 Trading Bot</CardTitle>
+          <CardTitle>{instance.name}</CardTitle>
           <Button
             variant="ghost"
             size="icon"
             onClick={handleRefresh}
-            disabled={loading || actionInProgress}
+            disabled={isLoading || isFetching}
             className="h-8 w-8"
           >
-            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            <RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
             <span className="sr-only">Refresh</span>
           </Button>
         </div>
-        <CardDescription>{instance?.instanceId || "Loading instance ID..."}</CardDescription>
+        <CardDescription>{instance.instanceId}</CardDescription>
       </CardHeader>
 
       <CardContent className="space-y-6">
@@ -192,64 +196,100 @@ export function InstanceManager() {
 
           <div className="flex justify-between items-center">
             <span className="text-sm font-medium">Type</span>
-            <span className="text-sm">{instance?.instanceType || "Unknown"}</span>
+            <span className="text-sm">{instance.instanceType || "Unknown"}</span>
           </div>
 
           <div className="flex justify-between items-center">
             <span className="text-sm font-medium">Public IP</span>
-            <span className="text-sm font-mono">{instance?.publicIp || "None"}</span>
+            <span className="text-sm font-mono">{instance.publicIp || "None"}</span>
           </div>
 
           <div className="flex justify-between items-center">
             <span className="text-sm font-medium">Launch Time</span>
-            <span className="text-sm">{formatDate(instance?.launchTime)}</span>
+            <span className="text-sm">{formatDate(instance.launchTime)}</span>
           </div>
         </div>
       </CardContent>
 
       <CardFooter className="flex gap-2 justify-center border-t pt-6">
-        {instance?.status === "stopped" && (
-          <Button
-            onClick={handleStartInstance}
-            disabled={actionInProgress}
-            className="bg-emerald-500 hover:bg-emerald-600 text-white"
-          >
-            {actionInProgress ? (
-              <>
-                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                Starting...
-              </>
-            ) : (
-              <>
-                <Power className="h-4 w-4 mr-2" />
-                Start Instance
-              </>
-            )}
-          </Button>
+        {instance.status === "stopped" && (
+          <AlertDialog open={showStartDialog} onOpenChange={setShowStartDialog}>
+            <AlertDialogTrigger asChild>
+              <Button
+                type="button"
+                disabled={isLoading || isStarting || isStopping}
+                className="bg-emerald-500 hover:bg-emerald-600 text-white"
+              >
+                {isStarting ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    Starting...
+                  </>
+                ) : (
+                  <>
+                    <Power className="h-4 w-4 mr-2" />
+                    Start Instance
+                  </>
+                )}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Start Instance</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Are you sure you want to start this instance? This will incur AWS charges.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleStartInstance}>
+                  Start Instance
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         )}
 
-        {instance?.status === "running" && (
-          <Button
-            onClick={handleStopInstance}
-            disabled={actionInProgress}
-            variant="outline"
-            className="border-rose-500 text-rose-500 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950"
-          >
-            {actionInProgress ? (
-              <>
-                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                Stopping...
-              </>
-            ) : (
-              <>
-                <PowerOff className="h-4 w-4 mr-2" />
-                Stop Instance
-              </>
-            )}
-          </Button>
+        {instance.status === "running" && (
+          <AlertDialog open={showStopDialog} onOpenChange={setShowStopDialog}>
+            <AlertDialogTrigger asChild>
+              <Button
+                type="button"
+                disabled={isLoading || isStarting || isStopping}
+                variant="outline"
+                className="border-rose-500 text-rose-500 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950"
+              >
+                {isStopping ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    Stopping...
+                  </>
+                ) : (
+                  <>
+                    <PowerOff className="h-4 w-4 mr-2" />
+                    Stop Instance
+                  </>
+                )}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Stop Instance</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Are you sure you want to stop this instance? This will terminate any running processes.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleStopInstance}>
+                  Stop Instance
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         )}
 
-        {(instance?.status === "pending" || instance?.status === "stopping") && (
+        {(instance.status === "pending" || instance.status === "stopping") && (
           <Button disabled className="opacity-50">
             <Clock className="h-4 w-4 mr-2 animate-spin" />
             {instance.status === "pending" ? "Starting..." : "Stopping..."}

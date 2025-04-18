@@ -13,30 +13,19 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useToast } from "@/hooks/use-toast"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-
-// This would typically come from your authentication system
-const mockUser = {
-  name: "John Doe",
-  email: "john.doe@example.com",
-  avatarUrl: "",
-}
+import { useClerk, useUser } from "@clerk/nextjs"
 
 export function UserAccount() {
-  const [user, setUser] = useState(mockUser)
   const { toast } = useToast()
+  const { user } = useUser()
+  const { signOut } = useClerk()
 
-  const handleLogout = () => {
-    // This would typically call your authentication system's logout function
+  const handleLogout = async () => {
+    await signOut()
     toast({
       title: "Logged out",
       description: "You have been successfully logged out.",
     })
-
-    // For demonstration purposes only - in a real app, this would be handled by your auth system
-    // and would likely redirect to a login page
-    setTimeout(() => {
-      window.location.reload()
-    }, 1500)
   }
 
   return (
@@ -44,16 +33,16 @@ export function UserAccount() {
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="relative h-8 w-8 rounded-full">
           <Avatar className="h-8 w-8">
-            <AvatarImage src={user.avatarUrl || "/placeholder.svg"} alt={user.name} />
-            <AvatarFallback className="bg-primary/10 text-primary">{user.name.charAt(0)}</AvatarFallback>
+            <AvatarImage src={user?.imageUrl || "/placeholder.svg"} alt={user?.fullName || 'profile photo'} />
+            <AvatarFallback className="bg-primary/10 text-primary">{(user?.fullName || ' ').charAt(0)}</AvatarFallback>
           </Avatar>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel className="font-normal">
           <div className="flex flex-col space-y-1">
-            <p className="text-sm font-medium leading-none">{user.name}</p>
-            <p className="text-xs leading-none text-muted-foreground">{user.email}</p>
+            <p className="text-sm font-medium leading-none">{user?.fullName}</p>
+            <p className="text-xs leading-none text-muted-foreground">{user?.emailAddresses[0].emailAddress}</p>
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
